@@ -37,7 +37,7 @@ Permite guardar tus progresos semana a semana, visualizar estadísticas mediante
 ---
 
 ## 📂 Estructura del proyecto
-
+```
 EjercitaciónFisica/
 │── app.py
 │── interfaz.py
@@ -52,10 +52,7 @@ EjercitaciónFisica/
 ├── CalisWork.ico
 ├── CalisWork Grafico.png
 └── CalisWorkAPP.png
-
-yaml
-Copiar
-Editar
+```
 
 ---
 
@@ -68,26 +65,24 @@ Editar
    ```
 2. **Crear entorno virtual e instalar dependencias:**
 
-    ```bash
-Copiar
-Editar
+```bash
 python -m venv venv
 source venv/bin/activate   # En Linux/Mac
 venv\Scripts\activate      # En Windows
 
 pip install -r requirements.txt
-    ```
+```
+---
+
 3. **Ejecutar la aplicación:**
 
-    ```bash
+```bash
 python app.py
-    ```
+```
 ## 📦 Empaquetado con PyInstaller
 Si deseas generar un archivo ejecutable (.exe en Windows):
 
 ```bash
-Copiar
-Editar
 pyinstaller --onefile --windowed --icon=img/CalisWork.ico app.py
 El ejecutable se generará en la carpeta dist/.
 ```
