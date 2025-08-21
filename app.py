@@ -6,10 +6,11 @@ except Exception:
     print("[ERROR] falta 'openpyxl'. Instalá con: pip install openpyxl")
     raise
 
-from ui import App
+from ui_modern import App
 
 def main() -> int:
-    app = App()
+    app = App(theme="superhero")
+    print("Usando theme:", app.style.theme_use())
     app.mainloop()
     return 0
 

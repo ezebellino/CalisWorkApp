@@ -40,9 +40,10 @@ Permite guardar tus progresos semana a semana, visualizar estadísticas mediante
 ```
 EjercitaciónFisica/
 │── app.py
-│── interfaz.py
+│── ui_modern.py
 │── utils.py
 │── requirements.txt
+│── requirements_full.txt
 │── README.md
 │
 ├── data/
