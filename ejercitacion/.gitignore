@@ -1,17 +1,15 @@
-# Entornos virtuales
-venv/
-ejercitacion/
-.env/
-
-# Archivos de Python
+# Carpetas que no quiero subir
 __pycache__/
+dist/
+build/
+*.spec
+
+# Archivos temporales
 *.pyc
 *.pyo
+*.pyd
+*.log
 
-# Archivos temporales de sistema
-.DS_Store
-Thumbs.db
-
-# Archivos de Excel generados
-*.xlsx
-
+# Entorno virtual
+venv/
+.env/
