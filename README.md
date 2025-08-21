@@ -1,55 +1,109 @@
-# Seguimiento de Calistenia – GUI con Tkinter
+# 🏋️‍♂️ Seguimiento de Calistenia – Tkinter
 
-Este es un proyecto personal creado para **registrar, visualizar y analizar entrenamientos de calistenia**. Incluye una interfaz gráfica sencilla hecha con **Tkinter**, almacenamiento en **Excel (pandas + openpyxl)** y gráficas con **matplotlib**.
+Aplicación de escritorio desarrollada en **Python** con **Tkinter** para llevar un registro de entrenamientos de calistenia.  
+Permite guardar tus progresos semana a semana, visualizar estadísticas mediante gráficos y resetear el seguimiento cuando quieras empezar desde cero.
 
-## 🚀 Funcionalidades
-- Registro de entrenamientos con fecha, ejercicio, repeticiones y tiempo.
-- Visualización en tabla de los entrenamientos previos.
-- Estado de migración de datos.
-- Gráficas de desempeño con filtros (diario, semanal, mensual).
-- Exportación automática a archivo Excel como base de datos local.
-
-## 📂 Estructura del proyecto
-```
-seguimiento_calistenia/
-│
-├── app.py                 # Punto de entrada: instancia la App y corre mainloop
-├── ui.py                  # Clase App con toda la interfaz Tkinter
-├── data_layer.py          # Lógica de manejo de Excel (crear, leer, actualizar, migrar)
-├── charts.py              # Funciones para generar y actualizar gráficas
-├── domain.py              # Constantes, configuraciones y helpers puros
-├── requirements.txt       # Librerías necesarias (pandas, openpyxl, matplotlib)
-├── .gitignore             # Ignora venv, __pycache__, archivos temporales
-├── LICENSE                # Licencia MIT
-└── README.md              # Este archivo
-```
-
-## 📦 Requisitos
-Instalar las dependencias:
-```bash
-pip install -r requirements.txt
-```
-
-## ▶️ Uso
-Ejecutar el programa con:
-```bash
-python app.py
-```
-
-Se abrirá una interfaz gráfica donde podrás registrar tus entrenamientos y ver estadísticas.
+---
 
 ## 📸 Capturas de pantalla
-*(Agregar aquí screenshots de la app en funcionamiento)*
+
+### Vista con datos cargados
+![App en funcionamiento](img/CalisWork%20Grafico.png)
+
+### Vista inicial sin registros
+![App vacía](img/CalisWorkAPP.png)
+
+---
+
+## 🚀 Funcionalidades
+
+- Registro semanal de ejercicios, repeticiones y comentarios.  
+- Visualización de desempeño en gráficos dinámicos con **Matplotlib**.  
+- Posibilidad de resetear el progreso y comenzar desde cero.  
+- Exportación de datos en archivos locales.  
+- Interfaz intuitiva construida con **Tkinter**.  
+- Icono personalizado de calistenia incluido en `img/CalisWork.ico`.
+
+---
 
 ## 🛠️ Tecnologías utilizadas
-- **Python 3.10+**
+
+- **Python 3.x**
 - **Tkinter** (interfaz gráfica)
-- **Pandas + Openpyxl** (gestión de datos en Excel)
-- **Matplotlib** (gráficas de desempeño)
+- **Pandas** (manejo de datos)
+- **Matplotlib** (gráficos)
+- **PyInstaller** (empaquetado a .exe)
 
-## 📌 Notas
-Este proyecto está pensado como un **ejemplo práctico para un perfil Trainee/Jr**, mostrando organización modular y uso de librerías populares en Python.
+---
 
-## 📜 Licencia
-Este proyecto está bajo la licencia MIT – libre para usar y modificar.
+## 📂 Estructura del proyecto
+
+EjercitaciónFisica/
+│── app.py
+│── interfaz.py
+│── utils.py
+│── requirements.txt
+│── README.md
+│
+├── data/
+│ └── progreso.csv
+│
+└── img/
+├── CalisWork.ico
+├── CalisWork Grafico.png
+└── CalisWorkAPP.png
+
+yaml
+Copiar
+Editar
+
+---
+
+## ⚙️ Instalación y ejecución
+
+1. **Clonar el repositorio:**
+   ```bash
+   git clone https://github.com/ezebellino/Seguimiento-Calistenia.git
+   cd Seguimiento-Calistenia
+   ```
+2. **Crear entorno virtual e instalar dependencias:**
+
+    ```bash
+Copiar
+Editar
+python -m venv venv
+source venv/bin/activate   # En Linux/Mac
+venv\Scripts\activate      # En Windows
+
+pip install -r requirements.txt
+    ```
+3. **Ejecutar la aplicación:**
+
+    ```bash
+python app.py
+    ```
+## 📦 Empaquetado con PyInstaller
+Si deseas generar un archivo ejecutable (.exe en Windows):
+
+```bash
+Copiar
+Editar
+pyinstaller --onefile --windowed --icon=img/CalisWork.ico app.py
+El ejecutable se generará en la carpeta dist/.
+```
+## ✨ Futuras mejoras
+Exportar reportes en PDF.
+
+Añadir más métricas de desempeño.
+
+Modo oscuro para la interfaz.
+
+Soporte multilenguaje.
+
+## 👨‍💻 Autor
+Desarrollado por Ezequiel Bellino
+📍 Argentina
+
+## 💪 "La disciplina supera la motivación"
+
 
