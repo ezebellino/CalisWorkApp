@@ -72,6 +72,19 @@ venv\Scripts\activate      # En Windows
 
 pip install -r requirements.txt
 ```
+Este archivo incluye solo las librerías esenciales para correr la app:
+
+~ pandas
+
+~ matplotlib
+
+~ openpyxl
+
+** OPCIONAL - Instalar todas las dependencias exactas del entorno de desarrollo **
+```bash
+pip install -r requirements_full.txt
+```
+
 ---
 
 3. **Ejecutar la aplicación:**
