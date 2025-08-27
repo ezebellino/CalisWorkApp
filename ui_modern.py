@@ -1,19 +1,3 @@
-"""
-UI moderna para Seguimiento de Calistenia usando Tkinter + ttkbootstrap
-----------------------------------------------------------------------
-Reemplaza a ui.py manteniendo la lógica, pero con una estética más actual:
-- Colores, tipografía y espaciados mejorados
-- Header con título e icono
-- Cards para formulario y gráfico
-- Botones con estilos (primary/success/secondary)
-
-
-Requisitos extra:
-pip install ttkbootstrap
-
-
-Sugerencia: podés alternar temas de ttkbootstrap: "flatly", "cosmo", "darkly", "minty"...
-"""
 from __future__ import annotations
 import tkinter as tk
 from pathlib import Path
@@ -35,6 +19,9 @@ from data_layer import (
     get_last_updates,
     weekly_summary_df,
     reset_progress,
+    load_exercises,
+    save_exercises,
+    load_exercises_with_categories
 )
 from charts import build_performance_figure
 
@@ -72,6 +59,7 @@ class App(tb.Window):
         title = tb.Label(header, text="Seguimiento de Calistenia", font=("Segoe UI", 20, "bold"))
         title.pack(side=LEFT)
         tb.Button(header, text="Cambiar Excel…", bootstyle=SECONDARY, command=self._choose_file).pack(side=RIGHT, padx=6)
+        tb.Button(header, text="Gestionar ejercicios…", bootstyle=INFO, command=self._manage_exercises).pack(side=RIGHT, padx=6)
         tb.Button(header, text="Resetear progreso", bootstyle=DANGER, command=self._on_reset_progress).pack(side=RIGHT, padx=6)
 
 
@@ -93,11 +81,21 @@ class App(tb.Window):
         self.cbo_week.bind("<<ComboboxSelected>>", self._update_objective_label)
 
 
-        # Ejercicio
+        # Ejercicio (lista dinámica y editable, sin comentarios)
         tb.Label(card_form, text="Ejercicio:").grid(row=0, column=2, padx=6, pady=6, sticky=W)
-        self.cbo_ex = tb.Combobox(card_form, values=EJERCICIOS, width=42, state="readonly")
+
+        ex_list, self.ex_cat_map = load_exercises_with_categories()
+        self.cbo_ex = tb.Combobox(card_form, values=ex_list, width=42, state="normal")
         self.cbo_ex.grid(row=0, column=3, padx=6, pady=6, sticky=W)
         self.cbo_ex.bind("<<ComboboxSelected>>", self._update_objective_label)
+
+        # (opcional) setear uno por defecto
+        if ex_list:
+            self.cbo_ex.set(ex_list[0])
+
+        # Etiqueta de categoría visible debajo del objetivo (o donde te guste)
+        self.lbl_cat = tb.Label(card_form, text="Categoría: -")
+        self.lbl_cat.grid(row=0, column=5, padx=6, pady=6, sticky=W)
 
 
         # Objetivo (solo lectura)
@@ -136,13 +134,18 @@ class App(tb.Window):
         split.add(table_card, weight=3)
 
 
-        cols = ("Semana", "Ejercicio", "Objetivo", "Reps/Seg Realizadas", "Comentarios", "Ultima actualización")
+        cols = ("Semana", "Ejercicio", "Categoría", "Objetivo", "Reps/Seg Realizadas", "Comentarios", "Ultima actualización")
         self.tree = tb.Treeview(table_card, columns=cols, show="headings", height=16)
         numeric_cols = {"Semana", "Objetivo", "Reps/Seg Realizadas"}
         for c in cols:
             anchor = CENTER if c in numeric_cols else W
             self.tree.heading(c, text=c)
-            self.tree.column(c, anchor=anchor, width=120 if c != "Ejercicio" else 260)
+            # ancho un poco mayor para Ejercicio/Comentarios
+            default_width = 120
+            if c == "Ejercicio": default_width = 220
+            if c == "Comentarios": default_width = 220
+            if c == "Categoría": default_width = 140
+            self.tree.column(c, anchor=anchor, width=default_width)
         self.tree.pack(fill=BOTH, expand=True)
 
 
@@ -161,7 +164,8 @@ class App(tb.Window):
 
 
         tb.Label(ctrl, text="Ejercicio:").pack(side=LEFT, padx=(12, 6))
-        self.cbo_ex_chart = tb.Combobox(ctrl, values=["Todos"] + EJERCICIOS, width=32, state="readonly")
+        ex_list_for_chart, _ = load_exercises_with_categories()
+        self.cbo_ex_chart = tb.Combobox(ctrl, values=["Todos"] + ex_list_for_chart, width=32, state="readonly")
         self.cbo_ex_chart.current(0)
         self.cbo_ex_chart.pack(side=LEFT)
 
@@ -200,6 +204,14 @@ class App(tb.Window):
     def _update_objective_label(self, *_):
         week = self.cbo_week.get()
         ex = self.cbo_ex.get()
+        try:
+            # si el usuario tipea un ejercicio nuevo que no está en el mapa,
+            # mostramos "General" por defecto
+            cat = self.ex_cat_map.get(ex, "General")
+            self.lbl_cat.config(text=f"Categoría: {cat}")
+        except Exception:
+            self.lbl_cat.config(text="Categoría: -")
+
         if not (week and ex):
             self.lbl_obj.config(text="Objetivo: -")
             return
@@ -332,11 +344,12 @@ class App(tb.Window):
             for _, r in df.iterrows():
                 semana = format_number(r.get("Semana", ""))
                 ejercicio = r.get("Ejercicio", "")
+                categoria = self.ex_cat_map.get(ejercicio, "General")  # <- NUEVO
                 objetivo = format_number(r.get("Objetivo", ""))
                 reps = format_number(r.get("Reps/Seg Realizadas", ""))
                 comentarios = r.get("Comentarios", "")
                 ultima = r.get("Ultima actualización", "")
-                self.tree.insert("", tk.END, values=[semana, ejercicio, objetivo, reps, comentarios, ultima])
+                self.tree.insert("", tk.END, values=[semana, ejercicio, categoria, objetivo, reps, comentarios, ultima])
 
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo cargar la tabla.\n{e}")
@@ -348,3 +361,40 @@ class App(tb.Window):
 
 
 
+    def _manage_exercises(self):
+        top = tb.Toplevel(self)
+        top.title("Gestionar ejercicios")
+        top.geometry("520x420")
+
+        frame = tb.Frame(top, padding=10)
+        frame.pack(fill=BOTH, expand=True)
+
+        tb.Label(frame, text="Ejercicios (uno por línea):").pack(anchor=W)
+
+        # ⚠️ Tkinter Text (no ttkbootstrap)
+        txt = tk.Text(frame, height=16)
+        txt.pack(fill=BOTH, expand=True, pady=6)
+
+        # cargar actuales
+        current = load_exercises()
+        txt.insert("1.0", "\n".join(current))
+
+        btns = tb.Frame(frame)
+        btns.pack(fill=X)
+
+        def _save_and_close():
+            lines = txt.get("1.0", "end").splitlines()
+            save_exercises(lines)
+            # refrescar combos y mapa de categorías
+            exs, self.ex_cat_map = load_exercises_with_categories()
+            self.cbo_ex.configure(values=exs)
+            self.cbo_ex_chart.configure(values=["Todos"] + exs)
+            # si el ejercicio actual ya no existe, vaciamos selección
+            if self.cbo_ex.get() not in exs:
+                self.cbo_ex.set(exs[0] if exs else "")
+            # refrescá la etiqueta de categoría
+            self._update_objective_label()
+            top.destroy()
+
+        tb.Button(btns, text="Guardar", bootstyle=SUCCESS, command=_save_and_close).pack(side=RIGHT, padx=6)
+        tb.Button(btns, text="Cancelar", bootstyle=SECONDARY, command=top.destroy).pack(side=RIGHT)

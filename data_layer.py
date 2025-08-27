@@ -10,21 +10,168 @@ import pandas as pd
 from domain import DEFAULT_FILE_PATH, EJERCICIOS, REPS_PLAN, COLUMNS
 
 
+# --- Gestión de ejercicios dinámicos ---
+EXERCISES_FILE = Path(__file__).resolve().parent / "exercises.txt"
+DEFAULT_EXERCISES = [
+    "Dominadas asistidas / negativas",
+    "Fondos asistidos",
+    "Lagartijas",
+    "Remo invertido",
+    "Sentadillas",
+    "Plancha frontal (seg)",
+    "Colgarse de la barra (seg)",
+    # Podés sumar muchas más por defecto si querés
+    
+]
+
+# Objetivos sugeridos (principiante). Números son reps; strings con "s" indican segundos.
+SUGGESTED_OBJECTIVES: dict[str, str | float | int] = {
+    # Tirón
+    "Dominadas asistidas / negativas": 5,
+    "Dominadas estrictas": 3,
+    "Dominadas supinas (chin-ups)": 4,
+    "Dominadas agarre neutro": 4,
+    "Remo invertido": 8,
+    "Remo invertido con pies elevados": 6,
+
+    # Empuje
+    "Flexiones (lagartijas)": 10,
+    "Flexiones inclinadas": 12,
+    "Flexiones declinadas": 8,
+    "Flexiones diamante": 6,
+    "Lagartijas": 10,
+    "Lagartijas arqueras": 6,
+    "Fondos asistidos": 6,
+    "Fondos en paralelas": 5,
+    "Pike push-ups": 6,
+
+    # Piernas
+    "Sentadillas": 15,
+    "Sentadillas búlgaras": 8,
+    "Zancadas": 10,
+    "Pistol squat asistida": 4,
+
+    # Core / isométricos
+    "Plancha frontal (seg)": "30s",
+    "Plancha lateral (seg)": "25s",
+    "Abdominales con rueda": 6,
+    "Elevaciones de rodillas en barra": 6,
+    "Elevaciones de piernas en barra": 4,
+    "Hollow hold (seg)": "25s",
+    "Dead bug": 10,
+
+    # Espalda baja / estabilidad
+    "Superman": 10,
+    "Superman hold": "20s",
+    "Perro de caza (Bird-dog)": 10,
+    "Puente de glúteos": 12,
+
+    # Agarre / colgar
+    "Colgarse de la barra (seg)": "20s",
+    "Colgar activo escapular (seg)": "15s",
+
+    # Variantes técnicas (valores suaves)
+    "Tuck planche hold (asistido)": "10s",
+    "Front lever tuck hold": "8s",
+    "Back lever tuck hold": "8s",
+}
+
+def _coerce_objective_value(obj: str | float | int) -> str:
+    """Devuelve un string para guardar en Excel: números como '12' y tiempos como '30s'."""
+    if isinstance(obj, (int, float)):
+        # Entero si es casi entero, de lo contrario dejamos con un decimal
+        if isinstance(obj, float) and abs(obj - round(obj)) < 1e-6:
+            return str(int(round(obj)))
+        return str(obj)
+    return str(obj).strip()
+
+def suggest_objective_for(exercise: str) -> str | None:
+    """Busca un objetivo sugerido por nombre exacto o por heurística de palabras clave."""
+    # 1) match exacto
+    if exercise in SUGGESTED_OBJECTIVES:
+        return _coerce_objective_value(SUGGESTED_OBJECTIVES[exercise])
+
+    # 2) heurísticas simples
+    name = exercise.lower()
+    if "plancha" in name or "hold" in name or "colgar" in name:
+        return "20s"
+    if "elevaciones" in name or "rodillas" in name or "piernas" in name:
+        return "6"
+    if "flexiones" in name or "lagartijas" in name or "fondos" in name or "remo" in name:
+        return "8"
+    if "sentadilla" in name or "zancada" in name or "pistol" in name:
+        return "10"
+    # default
+    return None
+
+
+def ensure_exercises_store() -> None:
+    EXERCISES_FILE.parent.mkdir(parents=True, exist_ok=True)
+    if not EXERCISES_FILE.exists():
+        EXERCISES_FILE.write_text("\n".join(DEFAULT_EXERCISES), encoding="utf-8")
+
+def load_exercises() -> list[str]:
+    # Delego al parser nuevo (excluye líneas con '#')
+    exs, _ = load_exercises_with_categories()
+    return exs
+
+def load_exercises_with_categories() -> tuple[list[str], dict[str, str]]:
+    """
+    Lee exercises.txt y devuelve:
+      - lista de ejercicios (sin líneas de comentario)
+      - mapa ejercicio -> categoría (tomada de la última línea que empieza con '#')
+    """
+    ensure_exercises_store()
+    lines = EXERCISES_FILE.read_text(encoding="utf-8").splitlines()
+
+    current_cat = None
+    exercises: list[str] = []
+    cat_map: dict[str, str] = {}
+
+    for raw in lines:
+        ln = raw.strip()
+        if not ln:
+            continue
+        if ln.startswith("#"):
+            # sección/categoría
+            current_cat = ln.lstrip("#").strip() or None
+            continue
+        # es ejercicio
+        exercises.append(ln)
+        cat_map[ln] = current_cat or "General"
+
+    return exercises, cat_map
+
+
+def save_exercises(ex_list: list[str]) -> None:
+    ensure_exercises_store()
+    # quitar duplicados y vacíos manteniendo orden
+    seen = set()
+    cleaned = []
+    for x in ex_list:
+        x = x.strip()
+        if x and x not in seen:
+            seen.add(x)
+            cleaned.append(x)
+    EXERCISES_FILE.write_text("\n".join(cleaned), encoding="utf-8")
 
 
 # ---------- Creación / Migración ----------
 
 
 def ensure_plan(path: Path) -> None:
-    """Crea el Excel con el plan si no existe."""
     if not path.exists():
         data = []
+        # ejercicios desde el store dinámico
+        exercises = load_exercises()
         for week in (1, 2, 3, 4):
-            for ex, target in zip(EJERCICIOS, REPS_PLAN[week]):
+            for ex in exercises:
+                # si tenés REPS_PLAN y coincide el índice, se puede mapear;
+                # como ahora es abierto, dejamos Objetivo vacío:
                 data.append({
                     "Semana": week,
                     "Ejercicio": ex,
-                    "Objetivo": target,
+                    "Objetivo": "",
                     "Reps/Seg Realizadas": "",
                     "Comentarios": "",
                     "Ultima actualización": "",
@@ -91,12 +238,46 @@ def get_objective(df: pd.DataFrame, week: int, exercise: str) -> int | None:
 
 def update_entry(path: Path, week: int, exercise: str, done: str, comments: str) -> bool:
     df = load_plan(path)
+    df, _ = _ensure_columns(df)
+
     idx = df.index[(df["Semana"] == week) & (df["Ejercicio"] == exercise)]
+    now_ts = pd.Timestamp.now()
+
+    # Normalizar "done": intentar número, si no, string
+    try:
+        done_val = float(str(done).replace(",", ".").strip())
+    except Exception:
+        done_val = str(done).strip()
+
     if len(idx) == 0:
-        return False
-    df.loc[idx, "Reps/Seg Realizadas"] = done
-    df.loc[idx, "Comentarios"] = comments
-    df.loc[idx, "Ultima actualización"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        new_row = {
+            "Semana": int(week),
+            "Ejercicio": exercise,
+            "Objetivo": "",  # se setea abajo si hay sugerido
+            "Reps/Seg Realizadas": done_val,
+            "Comentarios": comments,
+            "Ultima actualización": now_ts,
+        }
+        df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+        idx = df.index[(df["Semana"] == week) & (df["Ejercicio"] == exercise)]
+    else:
+        df.loc[idx, "Reps/Seg Realizadas"] = done_val
+        df.loc[idx, "Comentarios"] = comments
+        df.loc[idx, "Ultima actualización"] = now_ts
+
+    # 👉 Autocompletar objetivo si está vacío
+    try:
+        cur_obj = str(df.loc[idx, "Objetivo"].values[0]).strip()
+    except Exception:
+        cur_obj = ""
+    if not cur_obj or cur_obj.lower() == "nan":
+        sug = suggest_objective_for(exercise)
+        if sug is not None:
+            df.loc[idx, "Objetivo"] = sug
+
+    if "Ultima actualización" in df.columns:
+        df["Ultima actualización"] = pd.to_datetime(df["Ultima actualización"], errors="coerce")
+
     save_plan(path, df)
     return True
 
@@ -149,7 +330,7 @@ def reset_progress(path: Path, create_backup: bool = True) -> None:
 
     # Backup opcional
     if create_backup:
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        ts = datetime.now().strftime("%D%m%y")
         backup_path = path.with_name(f"{path.stem}.backup_{ts}{path.suffix}")
         df.to_excel(backup_path, index=False)
 
