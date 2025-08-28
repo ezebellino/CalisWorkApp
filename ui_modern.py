@@ -2,15 +2,14 @@ from __future__ import annotations
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox
-
-
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
 from ttkbootstrap.widgets import DateEntry
+import pandas as pd
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 
-from domain import DEFAULT_FILE_PATH, EJERCICIOS, format_number
+from domain import DEFAULT_FILE_PATH, format_number
 from data_layer import (
     ensure_plan,
     load_plan,
@@ -58,7 +57,8 @@ class App(tb.Window):
         header.pack(fill=X)
         title = tb.Label(header, text="Seguimiento de Calistenia", font=("Segoe UI", 20, "bold"))
         title.pack(side=LEFT)
-        tb.Button(header, text="Cambiar Excel…", bootstyle=SECONDARY, command=self._choose_file).pack(side=RIGHT, padx=6)
+        tb.Button(header, text="Abrir Excel…", bootstyle=SECONDARY, command=self._open_file).pack(side=RIGHT, padx=6)
+        tb.Button(header, text="Nuevo Excel…", bootstyle=INFO, command=self._new_file).pack(side=RIGHT, padx=6)
         tb.Button(header, text="Gestionar ejercicios…", bootstyle=INFO, command=self._manage_exercises).pack(side=RIGHT, padx=6)
         tb.Button(header, text="Resetear progreso", bootstyle=DANGER, command=self._on_reset_progress).pack(side=RIGHT, padx=6)
 
@@ -185,21 +185,36 @@ class App(tb.Window):
         status.pack(fill=X)
         
         # ---------------- Handlers ----------------
-    def _choose_file(self):
+        
+    def _open_file(self):
+        path = filedialog.askopenfilename(
+            title="Abrir archivo Excel",
+            filetypes=[("Excel", "*.xlsx"), ("Todos", "*.*")],
+        )
+        if not path:
+            return
+        self.file_path = Path(path)
+        _, migrated = load_plan_with_migration(self.file_path)
+        self._set_status("Migración aplicada: columnas faltantes añadidas." if migrated else f"Usando: {self.file_path}")
+        messagebox.showinfo("Archivo", f"Usando archivo: {self.file_path}")
+        self._refresh_table()
+
+    def _new_file(self):
         path = filedialog.asksaveasfilename(
-            title="Seleccionar/crear archivo Excel",
+            title="Crear archivo Excel",
             defaultextension=".xlsx",
             filetypes=[("Excel", "*.xlsx"), ("Todos", "*.*")],
-            initialfile=str(self.file_path.name),
+            initialfile="plan_calistenia_progreso.xlsx",
         )
         if not path:
             return
         self.file_path = Path(path)
         ensure_plan(self.file_path)
         _, migrated = load_plan_with_migration(self.file_path)
-        self._set_status("Migración aplicada: columnas faltantes fueron añadidas" if migrated else f"Usando: {self.file_path}")
+        self._set_status("Nuevo archivo creado." if not migrated else "Nuevo archivo creado y migrado.")
         messagebox.showinfo("Archivo", f"Usando archivo: {self.file_path}")
         self._refresh_table()
+
         
     def _update_objective_label(self, *_):
         week = self.cbo_week.get()
@@ -242,45 +257,99 @@ class App(tb.Window):
         self._update_objective_label()
         
     def _on_summary(self):
-        if not self.cbo_week.get():
+        import pandas as pd
+        from data_layer import load_plan  # usamos directamente el plan
+
+        wk = self.cbo_week.get()
+        if not wk:
             messagebox.showwarning("Validación", "Seleccioná la semana para el resumen.")
             return
-        week = int(self.cbo_week.get())
-        df = weekly_summary_df(self.file_path, week)
-        if df.empty:
-            messagebox.showinfo("Resumen", "No hay datos para esa semana.")
+
+        try:
+            week = int(wk)
+        except Exception:
+            messagebox.showwarning("Validación", "La semana debe ser un número entre 1 y 4.")
             return
 
+        # 1) Cargar plan y FILTRAR acá mismo (a prueba de balas)
+        plan = load_plan(self.file_path).copy()
+        plan_cols = set(plan.columns)
 
-        top = tb.Toplevel(self, title=f"Resumen Semana {week}")
+        # Normalizar 'Semana' a numérico y filtrar
+        if "Semana" not in plan_cols:
+            messagebox.showerror("Error", "El archivo no tiene columna 'Semana'.")
+            return
+
+        sem = pd.to_numeric(plan["Semana"], errors="coerce")
+        sub = plan.loc[sem.eq(float(week))].copy()
+
+        # DEBUG opcional
+        # print("DEBUG sub semanas:", sub["Semana"].unique(), "filas:", len(sub))
+
+        if sub.empty:
+            messagebox.showinfo("Resumen", f"No hay datos para la Semana {week}.")
+            return
+
+        # 2) Calcular % Objetivo (tolerante a '30s', '', 'nan', comas)
+        def _parse_numeric(value) -> float | None:
+            if value is None:
+                return None
+            s = str(value).strip().lower().replace(",", ".")
+            if s.endswith("s"):
+                s = s[:-1].strip()
+            if s in ("", "nan", "none"):
+                return None
+            try:
+                return float(s)
+            except Exception:
+                return None
+
+        def pct(row):
+            a = _parse_numeric(row.get("Reps/Seg Realizadas"))
+            o = _parse_numeric(row.get("Objetivo"))
+            if a is None or o is None or o <= 0:
+                return ""
+            return round((a / o) * 100.0, 1)
+
+        sub["% Objetivo"] = sub.apply(pct, axis=1)
+
+        # 3) Limpiar comentarios y formatear fecha
+        if "Comentarios" in sub.columns:
+            sub["Comentarios"] = sub["Comentarios"].astype(str)
+            sub.loc[sub["Comentarios"].str.lower().isin(["nan", "none"]), "Comentarios"] = ""
+
+        if "Ultima actualización" in sub.columns:
+            dts = pd.to_datetime(sub["Ultima actualización"], errors="coerce")
+            sub["Ultima actualización"] = dts.dt.strftime("%d/%m/%Y").fillna("")
+
+        # 4) Selección de columnas a mostrar
+        cols = ["Ejercicio", "Objetivo", "Reps/Seg Realizadas", "% Objetivo", "Comentarios", "Ultima actualización"]
+        cols = [c for c in cols if c in sub.columns]  # por si faltara alguna
+        sub = sub[cols].sort_values(["Ejercicio"], kind="stable")
+
+        # 5) Render de la ventana
+        top = tb.Toplevel(self)
+        top.title(f"Resumen Semana {week}")
         top.geometry("820x400")
 
-
-        cols = list(df.columns)
         tree = tb.Treeview(top, columns=cols, show="headings")
         numeric_cols = {"Objetivo", "Reps/Seg Realizadas", "% Objetivo"}
         for c in cols:
             anchor = CENTER if c in numeric_cols else W
+            width = 140 if c not in ("Ejercicio", "Comentarios") else 260
             tree.heading(c, text=c)
-            tree.column(c, width=120 if c not in ("Ejercicio", "Comentarios") else 260, anchor=anchor)
+            tree.column(c, width=width, anchor=anchor)
         tree.pack(fill=BOTH, expand=True, side=LEFT, padx=8, pady=8)
-
 
         sb = tb.Scrollbar(top, orient=VERTICAL, command=tree.yview)
         tree.configure(yscroll=sb.set)
         sb.pack(side=RIGHT, fill=Y)
 
+        for _, r in sub.iterrows():
+            tree.insert("", tk.END, values=[r.get(c, "") for c in cols])
 
-        for _, r in df.iterrows():
-            values = [
-            r.get("Ejercicio", ""),
-            format_number(r.get("Objetivo", "")),
-            format_number(r.get("Reps/Seg Realizadas", "")),
-            format_number(r.get("% Objetivo", "")),
-            r.get("Comentarios", ""),
-            r.get("Ultima actualización", ""),
-            ]
-            tree.insert("", tk.END, values=values)
+
+
                 
     def _on_reset_progress(self):
         if not self.file_path:
@@ -344,12 +413,27 @@ class App(tb.Window):
             for _, r in df.iterrows():
                 semana = format_number(r.get("Semana", ""))
                 ejercicio = r.get("Ejercicio", "")
-                categoria = self.ex_cat_map.get(ejercicio, "General")  # <- NUEVO
+
+                # Categoría (desde el mapa cargado al abrir la vista)
+                categoria = self.ex_cat_map.get(ejercicio, "General")
+
                 objetivo = format_number(r.get("Objetivo", ""))
                 reps = format_number(r.get("Reps/Seg Realizadas", ""))
-                comentarios = r.get("Comentarios", "")
-                ultima = r.get("Ultima actualización", "")
-                self.tree.insert("", tk.END, values=[semana, ejercicio, categoria, objetivo, reps, comentarios, ultima])
+
+                # Comentarios: evitar que aparezca "nan"
+                comentarios_raw = r.get("Comentarios", "")
+                comentarios = "" if pd.isna(comentarios_raw) else str(comentarios_raw)
+
+                # Fecha: mostrar dd/mm/aaaa (sin hora)
+                ultima_raw = r.get("Ultima actualización", "")
+                d = pd.to_datetime(ultima_raw, errors="coerce")
+                ultima = d.strftime("%d/%m/%Y") if pd.notna(d) else ""
+
+                self.tree.insert(
+                    "", tk.END,
+                    values=[semana, ejercicio, categoria, objetivo, reps, comentarios, ultima]
+                )
+
 
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo cargar la tabla.\n{e}")

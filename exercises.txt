@@ -1,4 +1,3 @@
-# TREN SUPERIOR
 Dominadas asistidas / negativas
 Dominadas estrictas
 Dominadas explosivas
@@ -12,8 +11,6 @@ Remo invertido
 Remo invertido con pies elevados
 Superman hold
 Perro de caza (Bird-dog)
-
-# CORE
 Plancha frontal (seg)
 Plancha lateral (seg)
 Plancha con elevación de pierna
@@ -23,8 +20,6 @@ Crunches
 Crunches bicicleta
 Elevaciones de piernas en barra
 Elevaciones de rodillas en barra
-
-# PIERNAS
 Sentadillas
 Sentadillas búlgaras
 Sentadillas pistol asistidas
@@ -32,15 +27,11 @@ Zancadas
 Hip thrusts
 Puente de glúteo
 Saltos en sentadilla
-
-# ESTÁTICOS Y FUERZA ISOMÉTRICA
 Colgarse de la barra (seg)
 Colgarse con barbilla sobre la barra (chin over bar)
 Tuck planche hold (asistido)
 Front lever tuck hold
 Back lever tuck hold
-
-# MOVILIDAD Y ESTABILIDAD
 Superman dinámico
 Perro de caza dinámico
 Dead bug

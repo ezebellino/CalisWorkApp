@@ -5,7 +5,7 @@ a = Analysis(
     ['app.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[('exercises.txt', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

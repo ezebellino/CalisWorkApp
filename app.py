@@ -7,10 +7,46 @@ except Exception:
     raise
 
 from ui_modern import App
+'''
+Temas claros (light)
 
+flatly
+
+cosmo
+
+litera
+
+lumen
+
+minty
+
+pulse
+
+sandstone
+
+united
+
+yeti
+
+Temas oscuros (dark)
+
+cyborg
+
+darkly
+
+solar
+
+superhero
+
+Neutros / especiales
+
+journal
+
+morph
+
+'''
 def main() -> int:
-    app = App(theme="superhero")
-    print("Usando theme:", app.style.theme_use())
+    app = App(theme="solar")
     app.mainloop()
     return 0
 

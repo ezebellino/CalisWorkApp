@@ -1,54 +1,65 @@
-# charts.py
 from __future__ import annotations
-from typing import Optional
 import pandas as pd
 from matplotlib.figure import Figure
 
+def _coerce_numeric_series(s: pd.Series) -> pd.Series:
+    """
+    Convierte una serie a float de forma tolerante:
+    - strings con coma decimal
+    - '30s' -> 30
+    - 'nan' / '' -> NaN
+    """
+    if s is None:
+        return pd.Series(dtype="float64")
+    s = s.astype(str).str.strip().str.lower().str.replace(",", ".", regex=False)
+    s = s.str.replace(r"s$", "", regex=True).str.strip()
+    s = s.mask(s.isin(["", "nan", "none"]))
+    return pd.to_numeric(s, errors="coerce")
 
-def build_performance_figure(
-    df: pd.DataFrame,
-    period_sel: str,
-    ex_sel: Optional[str] = None,
-) -> Figure:
+def _choose_freq(period_sel: str) -> str:
+    if period_sel == "Diario":
+        return "D"
+    if period_sel == "Mensual":
+        return "ME"  # 'M' está deprecado -> usar MonthEnd
+    return "W"  # Semanal (default)
+
+def build_performance_figure(df: pd.DataFrame, period_sel: str, ex_sel: str | None) -> Figure:
     """
-    Recibe un DataFrame con columnas: 'Ultima actualización', 'Objetivo',
-    'Reps/Seg Realizadas', 'Ejercicio'. Devuelve una Figure de matplotlib.
+    Espera columnas:
+      - 'Ultima actualización'
+      - 'Reps/Seg Realizadas'
+      - 'Objetivo'
+      - 'Ejercicio'
+    Devuelve una Figure lista para embebido.
     """
-    if df.empty:
+    if df is None or df.empty:
         raise ValueError("No hay datos para graficar.")
 
-    # Preparación de timestamp y % objetivo
+    # --- Copia y normalizaciones ---
     df = df.copy()
+    # Fecha
     df["_ts"] = pd.to_datetime(df["Ultima actualización"], errors="coerce")
-
-    def pct(row) -> Optional[float]:
-        try:
-            actual_raw = str(row["Reps/Seg Realizadas"]).replace(",", ".").strip()
-            actual = float(actual_raw)
-            objetivo = float(row["Objetivo"])
-            return (actual / objetivo) * 100 if objetivo > 0 else None
-        except Exception:
-            return None
-
-    df["pct_obj"] = df.apply(pct, axis=1)
-    df = df.dropna(subset=["pct_obj", "_ts"])  # mantengo válidos
+    df = df[pd.notna(df["_ts"])]
     if df.empty:
-        raise ValueError("Cargá algunos registros primero.")
+        raise ValueError("No hay fechas válidas para graficar. Cargá datos con fecha.")
 
-    # Filtro por ejercicio
+    # Numéricos: reps y objetivo
+    reps = _coerce_numeric_series(df.get("Reps/Seg Realizadas"))
+    obj  = _coerce_numeric_series(df.get("Objetivo"))
+    df["pct_obj"] = (reps / obj) * 100.0
+    # Filtrar filas válidas
+    df = df[pd.notna(df["pct_obj"]) & pd.notna(df["_ts"]) & (obj > 0)]
+    if df.empty:
+        raise ValueError("No hay valores numéricos suficientes (reps/objetivo) para graficar.")
+
+    # Filtro por ejercicio (si corresponde)
     if ex_sel and ex_sel != "Todos":
         df = df[df["Ejercicio"] == ex_sel]
         if df.empty:
-            raise ValueError("No hay datos para ese ejercicio.")
+            raise ValueError("No hay datos para el ejercicio seleccionado.")
 
-    # Agregación por periodo (usar 'ME' para mensual para evitar FutureWarning)
-    if period_sel == "Diario":
-        freq = "D"
-    elif period_sel == "Mensual":
-        freq = "ME"
-    else:
-        freq = "W"
-
+    # --- Agregación por periodo ---
+    freq = _choose_freq(period_sel or "Semanal")
     grp = (
         df.set_index("_ts")
           .groupby(pd.Grouper(freq=freq))["pct_obj"]
@@ -56,16 +67,29 @@ def build_performance_figure(
           .dropna()
     )
     if grp.empty:
-        raise ValueError("No hay datos agregados para ese periodo.")
+        raise ValueError("No hay datos agregados para ese período. Cargá más registros.")
 
-    # Construcción de la figura
-    fig = Figure(figsize=(7.5, 3.0), dpi=100)
+    # --- Construcción de la figura ---
+    fig = Figure(figsize=(7.8, 3.2), dpi=100)
     ax = fig.add_subplot(111)
-    ax.plot(grp.index, grp.values, marker="o")
+
+    # Estética: línea + marcadores, banda 80-120%, línea 100%
+    ax.plot(grp.index, grp.values, marker="o", linewidth=1.8)
+    ax.axhline(100, linestyle="--", linewidth=1, alpha=0.9)
+    ax.fill_between(grp.index, 80, 120, alpha=0.12)
+
+    # Ejes y rótulos
     ax.set_ylabel("% del objetivo (promedio)")
     ax.set_xlabel("Tiempo")
-    title_ex = ex_sel if ex_sel and ex_sel != "Todos" else "Todos los ejercicios"
-    ax.set_title(f"Desempeño {period_sel.lower()} – {title_ex}")
-    ax.grid(True, linestyle=":", linewidth=0.5)
-    ax.set_ylim(0, max(100, min(140, (grp.max() // 10 + 2) * 10)))
+    titulo_ej = ex_sel if ex_sel and ex_sel != "Todos" else "Todos los ejercicios"
+    ax.set_title(f"Desempeño {period_sel.lower() if period_sel else 'semanal'} – {titulo_ej}")
+
+    # Límites y grilla
+    ymax = max(100, min(160, (float(grp.max()) // 10 + 3) * 10))
+    ax.set_ylim(0, ymax)
+    ax.grid(True, linestyle=":", linewidth=0.6, alpha=0.7)
+
+    # Fechas legibles
+    fig.autofmt_xdate(rotation=30)
+
     return fig

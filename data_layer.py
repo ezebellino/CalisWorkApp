@@ -2,12 +2,9 @@ from __future__ import annotations
 from pathlib import Path
 from datetime import datetime
 from typing import Tuple
-
-
 import pandas as pd
-
-
-from domain import DEFAULT_FILE_PATH, EJERCICIOS, REPS_PLAN, COLUMNS
+import numpy as np
+from domain import DEFAULT_FILE_PATH, COLUMNS
 
 
 # --- Gestión de ejercicios dinámicos ---
@@ -25,22 +22,23 @@ DEFAULT_EXERCISES = [
 ]
 
 # Objetivos sugeridos (principiante). Números son reps; strings con "s" indican segundos.
-SUGGESTED_OBJECTIVES: dict[str, str | float | int] = {
-    # Tirón
+SUGGESTED_OBJECTIVES = {
+    # Tirón / Dominadas
     "Dominadas asistidas / negativas": 5,
     "Dominadas estrictas": 3,
-    "Dominadas supinas (chin-ups)": 4,
+    "Dominadas pronas": 3,
+    "Dominadas supinas": 4,
     "Dominadas agarre neutro": 4,
     "Remo invertido": 8,
     "Remo invertido con pies elevados": 6,
 
     # Empuje
+    "Lagartijas": 10,
     "Flexiones (lagartijas)": 10,
     "Flexiones inclinadas": 12,
     "Flexiones declinadas": 8,
     "Flexiones diamante": 6,
-    "Lagartijas": 10,
-    "Lagartijas arqueras": 6,
+    "Lagartijas archer": 6,
     "Fondos asistidos": 6,
     "Fondos en paralelas": 5,
     "Pike push-ups": 6,
@@ -70,11 +68,71 @@ SUGGESTED_OBJECTIVES: dict[str, str | float | int] = {
     "Colgarse de la barra (seg)": "20s",
     "Colgar activo escapular (seg)": "15s",
 
-    # Variantes técnicas (valores suaves)
+    # Técnicos
     "Tuck planche hold (asistido)": "10s",
     "Front lever tuck hold": "8s",
     "Back lever tuck hold": "8s",
 }
+
+def _parse_numeric(value) -> float | None:
+    if value is None:
+        return None
+    s = str(value).strip().lower().replace(",", ".")
+    if s.endswith("s"):
+        s = s[:-1].strip()
+    if s in ("", "nan", "none"):
+        return None
+    try:
+        return float(s)
+    except Exception:
+        return None
+
+def weekly_summary_df(path: Path, week: int) -> pd.DataFrame:
+    df = load_plan(path)
+    df, _ = _ensure_columns(df)
+
+    # Normalizar Semana a numérico y filtrar
+    sem = pd.to_numeric(df["Semana"], errors="coerce")
+    sub = df.loc[sem.eq(float(week))].copy()
+
+    if sub.empty:
+        return pd.DataFrame(columns=[
+            "Ejercicio", "Objetivo", "Reps/Seg Realizadas",
+            "% Objetivo", "Comentarios", "Ultima actualización"
+        ])
+
+    def _parse_numeric(value) -> float | None:
+        if value is None:
+            return None
+        s = str(value).strip().lower().replace(",", ".")
+        if s.endswith("s"):
+            s = s[:-1].strip()
+        if s in ("", "nan", "none"):
+            return None
+        try:
+            return float(s)
+        except Exception:
+            return None
+
+    def pct(row):
+        a = _parse_numeric(row.get("Reps/Seg Realizadas"))
+        o = _parse_numeric(row.get("Objetivo"))
+        if a is None or o is None or o <= 0:
+            return ""
+        return round((a / o) * 100.0, 1)
+
+    sub["% Objetivo"] = sub.apply(pct, axis=1)
+
+    for col in ["Comentarios", "Ultima actualización"]:
+        if col not in sub.columns:
+            sub[col] = ""
+
+    sub = sub.sort_values(["Ejercicio", "Ultima actualización"], kind="stable")
+    print("DEBUG semanas únicas en sub: ", sub["Semana"].unique())
+    return sub[[
+        "Ejercicio", "Objetivo", "Reps/Seg Realizadas",
+        "% Objetivo", "Comentarios", "Ultima actualización"
+    ]]
 
 def _coerce_objective_value(obj: str | float | int) -> str:
     """Devuelve un string para guardar en Excel: números como '12' y tiempos como '30s'."""
@@ -86,22 +144,34 @@ def _coerce_objective_value(obj: str | float | int) -> str:
     return str(obj).strip()
 
 def suggest_objective_for(exercise: str) -> str | None:
-    """Busca un objetivo sugerido por nombre exacto o por heurística de palabras clave."""
-    # 1) match exacto
+    # 1) Match exacto
     if exercise in SUGGESTED_OBJECTIVES:
         return _coerce_objective_value(SUGGESTED_OBJECTIVES[exercise])
 
-    # 2) heurísticas simples
-    name = exercise.lower()
-    if "plancha" in name or "hold" in name or "colgar" in name:
+    # 2) Heurísticas por palabra clave (minúsculas y sin espacios extremos)
+    name = (exercise or "").strip().lower()
+
+    # Isométricos / holds / tiempo
+    if any(k in name for k in ["plancha", "hold", "colgar", "hang", "isometr", "l-sit", "v-sit"]):
         return "20s"
-    if "elevaciones" in name or "rodillas" in name or "piernas" in name:
+
+    # Dominadas / tirón
+    if any(k in name for k in ["dominad", "pull-up", "chin-up", "chin up", "chinup", "agarre neutro", "prona", "supina"]):
+        return "4"
+
+    # Core dinámico
+    if any(k in name for k in ["elevaciones", "rodillas", "piernas", "ab wheel", "rueda"]):
         return "6"
-    if "flexiones" in name or "lagartijas" in name or "fondos" in name or "remo" in name:
+
+    # Empuje
+    if any(k in name for k in ["flexion", "lagartija", "fondos", "remo"]):
         return "8"
-    if "sentadilla" in name or "zancada" in name or "pistol" in name:
+
+    # Piernas
+    if any(k in name for k in ["sentadilla", "zancada", "pistol", "búlgar"]):
         return "10"
-    # default
+
+    # Default si no entró en nada
     return None
 
 
@@ -169,7 +239,7 @@ def ensure_plan(path: Path) -> None:
                 # si tenés REPS_PLAN y coincide el índice, se puede mapear;
                 # como ahora es abierto, dejamos Objetivo vacío:
                 data.append({
-                    "Semana": week,
+                    "Semana": int(week),
                     "Ejercicio": ex,
                     "Objetivo": "",
                     "Reps/Seg Realizadas": "",
@@ -196,7 +266,17 @@ def _ensure_columns(df: pd.DataFrame) -> Tuple[pd.DataFrame, bool]:
         pass
     return df, modified
 
-
+from data_layer import load_exercises_with_categories  
+def migrate_add_category_column(path: Path) -> None:
+    df = pd.read_excel(path)
+    if "Categoría" in df.columns:
+        return
+    # agregar columna vacía
+    df["Categoría"] = ""
+    # mapear según exercises.txt
+    ex_list, cat_map = load_exercises_with_categories()
+    df["Categoría"] = df["Ejercicio"].map(lambda x: cat_map.get(str(x).strip(), "General"))
+    df.to_excel(path, index=False)
 
 def _migrate_file(path: Path) -> pd.DataFrame:
     df = pd.read_excel(path)
@@ -209,9 +289,15 @@ def _migrate_file(path: Path) -> pd.DataFrame:
 def load_plan_with_migration(path: Path) -> tuple[pd.DataFrame, bool]:
     df = pd.read_excel(path)
     df, modified = _ensure_columns(df)
+
+    # aquí llamamos la migración extra
+    migrate_add_category_column(path)
+    df = pd.read_excel(path)  # recargar después de migrar
+
     if modified:
         df.to_excel(path, index=False)
     return df, modified
+
 
 
 def load_plan(path: Path) -> pd.DataFrame:
@@ -240,14 +326,22 @@ def update_entry(path: Path, week: int, exercise: str, done: str, comments: str)
     df = load_plan(path)
     df, _ = _ensure_columns(df)
 
+    exercise = (exercise or "").strip()  # <<< normaliza nombre
+    # Asegurar dtypes 'object' para columnas mixtas
+    for col in ["Reps/Seg Realizadas", "Comentarios"]:
+        if col in df.columns and df[col].dtype != "object":
+            df[col] = df[col].astype("object")
+
     idx = df.index[(df["Semana"] == week) & (df["Ejercicio"] == exercise)]
-    now_ts = pd.Timestamp.now()
+    today = pd.Timestamp.now().normalize()  
+    df.loc[idx, "Última actualización"] = today
 
     # Normalizar "done": intentar número, si no, string
     try:
         done_val = float(str(done).replace(",", ".").strip())
     except Exception:
-        done_val = str(done).strip()
+        s = str(done).strip()
+        done_val = s if s else pd.NA
 
     if len(idx) == 0:
         new_row = {
@@ -256,14 +350,14 @@ def update_entry(path: Path, week: int, exercise: str, done: str, comments: str)
             "Objetivo": "",  # se setea abajo si hay sugerido
             "Reps/Seg Realizadas": done_val,
             "Comentarios": comments,
-            "Ultima actualización": now_ts,
+            "Ultima actualización": today,
         }
         df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
         idx = df.index[(df["Semana"] == week) & (df["Ejercicio"] == exercise)]
     else:
         df.loc[idx, "Reps/Seg Realizadas"] = done_val
         df.loc[idx, "Comentarios"] = comments
-        df.loc[idx, "Ultima actualización"] = now_ts
+        df.loc[idx, "Ultima actualización"] = today
 
     # 👉 Autocompletar objetivo si está vacío
     try:
@@ -275,11 +369,13 @@ def update_entry(path: Path, week: int, exercise: str, done: str, comments: str)
         if sug is not None:
             df.loc[idx, "Objetivo"] = sug
 
-    if "Ultima actualización" in df.columns:
+    # Asegurar datetime para la fecha
+    if "Ultima actualización" in df.columns and not pd.api.types.is_datetime64_any_dtype(df["Ultima actualización"]):
         df["Ultima actualización"] = pd.to_datetime(df["Ultima actualización"], errors="coerce")
 
     save_plan(path, df)
     return True
+
 
 
 def get_last_updates(path: Path, limit: int = 10) -> pd.DataFrame:
@@ -310,17 +406,6 @@ def get_last_updates(path: Path, limit: int = 10) -> pd.DataFrame:
     return filled[cols].head(limit)
 
 
-
-
-
-def weekly_summary_df(path: Path, week: int) -> pd.DataFrame:
-    df = load_plan(path)
-    df, _ = _ensure_columns(df)
-    sub = df[df["Semana"] == week].copy()
-    return sub[["Ejercicio", "Objetivo", "Reps/Seg Realizadas", "% Objetivo", "Comentarios", "Ultima actualización"]]
-
-
-
 def reset_progress(path: Path, create_backup: bool = True) -> None:
     """
     Limpia las columnas de progreso y deja el plan en estado inicial.
@@ -330,7 +415,7 @@ def reset_progress(path: Path, create_backup: bool = True) -> None:
 
     # Backup opcional
     if create_backup:
-        ts = datetime.now().strftime("%D%m%y")
+        ts = datetime.now().strftime("%Y%m%d")     # 20250827
         backup_path = path.with_name(f"{path.stem}.backup_{ts}{path.suffix}")
         df.to_excel(backup_path, index=False)
 
